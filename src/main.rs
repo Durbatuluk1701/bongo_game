@@ -100,10 +100,10 @@ fn print_five_word(word: FiveWord) -> String {
 }
 
 fn generate_k_sets(
-    valid_words: Vec<&Box<ValidWord>>,
+    valid_words: Vec<&ValidWord>,
     k: i32,
     word_bag: Vec<char>,
-) -> Vec<Vec<&Box<ValidWord>>> {
+) -> Vec<Vec<&ValidWord>> {
     // Generate all combinations of k valid words from the valid_words vector, parallelized with Rayon
     let n = valid_words.len();
     if k == 0 {
@@ -150,7 +150,7 @@ fn generate_k_sets(
         .collect()
 }
 
-fn permute_board<'a>(board: &'a [&'a Box<ValidWord>]) -> Vec<Vec<&'a Box<ValidWord>>> {
+fn permute_board<'a>(board: &'a [&'a ValidWord]) -> Vec<Vec<&'a ValidWord>> {
     if board.len() != 5 {
         panic!("Board must have exactly 5 words.");
     }
@@ -240,7 +240,7 @@ fn main() {
             )))
         })
         .collect();
-    let valid_words_copy: Vec<&Box<ValidWord>> = valid_words.iter().collect();
+    let valid_words_copy: Vec<&ValidWord> = valid_words.iter().map(|b| b.as_ref()).collect();
     print!("Copied {} valid words to memory. ", valid_words.len());
     // flush io
     std::io::stdout().flush().unwrap();
@@ -255,9 +255,7 @@ fn main() {
         println!(
             "Set {}: {:?}",
             i,
-            set.iter()
-                .map(|w| print_five_word((*w).0))
-                .collect::<Vec<_>>()
+            set.iter().map(|w| print_five_word(w.0)).collect::<Vec<_>>()
         );
     }
 
@@ -277,7 +275,7 @@ fn main() {
                 let batch_start = batch_idx * batch_size;
                 let batch_end = ((batch_idx + 1) * batch_size).min(total);
                 for idx in batch_start..batch_end {
-                    let board: &Vec<&Box<ValidWord>> = &valid_sets_arc[idx];
+                    let board: &Vec<&ValidWord> = &valid_sets_arc[idx];
                     // Check all permutations of the board
                     let permutation = permute_board(board);
                     for permut in permutation {
