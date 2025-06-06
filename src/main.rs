@@ -1,8 +1,8 @@
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
+use std::io::Write;
 use std::io::{BufRead, BufReader};
-use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -97,7 +97,7 @@ const BONUS_WORD_INDS: [(usize, usize); 4] = [(0, 2), (1, 2), (2, 2), (3, 3)];
 
 type FourWord = [char; 4];
 type FiveWord = [char; 5];
-type ValidWord = (FiveWord, bool); // (word, wildcard_used)
+type ValidWord = (FiveWord, Option<char>); // (word, wildcard_used)
 fn print_five_word(word: FiveWord) -> String {
     word.iter().collect()
 }
@@ -121,7 +121,7 @@ fn generate_k_sets(
             for &c in cur_valid_word.0.iter() {
                 if let Some(pos) = new_word_bag.iter().position(|&x| x == c) {
                     new_word_bag.remove(pos);
-                } else if cur_valid_word.1 {
+                } else if let Some(_ind) = cur_valid_word.1 {
                     // If wildcard is used, remove it
                     if let Some(pos) = new_word_bag.iter().position(|&x| x == '*') {
                         new_word_bag.remove(pos);
@@ -136,15 +136,18 @@ fn generate_k_sets(
             let next_valid_words = valid_words[i + 1..]
                 .iter()
                 .filter(|&&w| {
-                    w.0.iter()
-                        .all(|&c| new_word_bag.iter().any(|&x| x == c || (w.1 && x == '*')))
+                    w.0.iter().all(|&c| {
+                        new_word_bag
+                            .iter()
+                            .any(|&x| x == c || (w.1 == Some(c) && x == '*'))
+                    })
                 })
                 .cloned()
                 .collect::<Vec<_>>();
             generate_k_sets(next_valid_words, k - 1, new_word_bag)
                 .into_iter()
                 .map(|mut set| {
-                    set.push(valid_words[i]);
+                    set.push(cur_valid_word);
                     set
                 })
                 .collect::<Vec<Vec<_>>>()
@@ -189,25 +192,86 @@ fn score_board(
     letter_scores: &HashMap<char, i32>,
     four_letter_words: &HashSet<FourWord>,
 ) -> i32 {
-    let mut score = 0;
-    for (r, word) in board.iter().enumerate() {
-        for (c, ch) in word.0.iter().enumerate() {
-            score += letter_scores.get(ch).unwrap_or(&0) * SCHEMA[r][c];
+    let mut wildcard_letter = '*';
+    for word in board.iter() {
+        if let Some(wildchar) = word.1 {
+            // If wildcard is used, we can use any letter in its place
+            wildcard_letter = wildchar;
         }
     }
-    // Now add the bonus words score
-    let mut new_word: FourWord = ['*'; 4];
-    for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
-        if let Some(word) = board.get(r) {
-            new_word[i] = word.0[c];
+    // Now, find all places that letter is used in this board
+    let all_wildcard_indices: Vec<(usize, usize)> = board
+        .iter()
+        .enumerate()
+        .filter_map(|(r, word)| {
+            word.0.iter().enumerate().find_map(|(c, &ch)| {
+                if ch == wildcard_letter {
+                    Some((r, c))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+    // Now, try calculating the score where wildcard is used in each of those places
+    let mut max_score = 0;
+    if all_wildcard_indices.is_empty() {
+        let mut local_score = 0;
+        for (row, word) in board.iter().enumerate() {
+            for (col, ch) in word.0.iter().enumerate() {
+                local_score += letter_scores.get(ch).unwrap_or(&0) * SCHEMA[row][col];
+            }
         }
-    }
-    if four_letter_words.contains(&new_word) {
+        // Now add the bonus words score
+        let mut new_word: FourWord = ['*'; 4];
         for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
-            score += letter_scores.get(&new_word[i]).unwrap_or(&0) * SCHEMA[r][c];
+            if let Some(word) = board.get(r) {
+                new_word[i] = word.0[c];
+            }
+        }
+        if four_letter_words.contains(&new_word) {
+            for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
+                local_score += letter_scores.get(&new_word[i]).unwrap_or(&0) * SCHEMA[r][c];
+            }
+        }
+        if max_score < local_score {
+            max_score = local_score;
+        }
+    } else {
+        for (row1, col1) in all_wildcard_indices {
+            let mut local_score = 0;
+            for (row, word) in board.iter().enumerate() {
+                for (col, ch) in word.0.iter().enumerate() {
+                    if row == row1 && col == col1 {
+                        // If this is the wildcard position, use the wildcard letter
+                        continue;
+                        // score += letter_scores.get(&wildcard_letter).unwrap_or(&0) * SCHEMA[row][col];
+                    }
+                    local_score += letter_scores.get(ch).unwrap_or(&0) * SCHEMA[row][col];
+                }
+            }
+            // Now add the bonus words score
+            let mut new_word: FourWord = ['*'; 4];
+            for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
+                if let Some(word) = board.get(r) {
+                    new_word[i] = word.0[c];
+                }
+            }
+            if four_letter_words.contains(&new_word) {
+                for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
+                    if r == row1 && c == col1 {
+                        // If this is the wildcard position, use the wildcard letter
+                        continue;
+                    }
+                    local_score += letter_scores.get(&new_word[i]).unwrap_or(&0) * SCHEMA[r][c];
+                }
+            }
+            if max_score < local_score {
+                max_score = local_score;
+            }
         }
     }
-    score
+    max_score
 }
 
 fn main() {
@@ -222,7 +286,7 @@ fn main() {
     }
 
     // Read words from file
-    let file = File::open("sgb-words-mini.txt").expect("data.txt not found");
+    let file = File::open("sgb-words-med.txt").expect("data.txt not found");
     let bongo_file = File::open("bongo-common-words.txt").expect("data.txt not found");
     // let file = File::open("bongo-common-words.txt").expect("data.txt not found");
     let reader = BufReader::new(file);
@@ -259,14 +323,14 @@ fn main() {
         .par_iter()
         .filter_map(|word| {
             let mut bag = letter_bag.clone();
-            let mut wildcard_used = false;
+            let mut wildcard_char: Option<char> = None;
             for c in word.chars() {
                 if let Some(pos) = bag.iter().position(|&x| x == c) {
                     bag.remove(pos);
-                } else if !wildcard_used {
+                } else if wildcard_char == None {
                     if let Some(pos) = bag.iter().position(|&x| x == '*') {
                         bag.remove(pos);
-                        wildcard_used = true;
+                        wildcard_char = Some(c);
                     } else {
                         return None;
                     }
@@ -283,7 +347,7 @@ fn main() {
                     word.chars().nth(3).unwrap(),
                     word.chars().nth(4).unwrap(),
                 ],
-                wildcard_used,
+                wildcard_char,
             )))
         })
         .collect();
@@ -322,11 +386,10 @@ fn main() {
                 let batch_start = batch_idx * batch_size;
                 let batch_end = ((batch_idx + 1) * batch_size).min(total);
                 for idx in batch_start..batch_end {
-                    let board: &Vec<&ValidWord> = &valid_sets_arc[idx];
                     // Check all permutations of the board
-                    let permutation = permute_board(board);
+                    let permutation = permute_board(&valid_sets_arc[idx]);
                     for permut in permutation {
-                        let score = score_board(board, &letter_scores, &four_words);
+                        let score = score_board(&permut, &letter_scores, &four_words);
                         if score > local_best.0 {
                             local_best =
                                 (score, permut.iter().map(|word| word.0).collect::<Vec<_>>());
@@ -349,6 +412,14 @@ fn main() {
         )
         .max_by_key(|(score, _)| *score)
         .unwrap();
+    // for best in bests {
+    //     if best.0 > 0 {
+    //         println!("\nFound a valid board with score: {}", best.0);
+    //         for row in &best.1 {
+    //             println!("{}", print_five_word(*row));
+    //         }
+    //     }
+    // }
     println!();
     if best.0 > 0 {
         println!("Best board:");
