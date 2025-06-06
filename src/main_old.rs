@@ -1,3 +1,4 @@
+use dashmap::DashMap;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -102,11 +103,34 @@ fn print_five_word(word: FiveWord) -> String {
     s
 }
 
-fn generate_k_sets(
-    valid_words: Vec<&Box<ValidWord>>,
-    k: i32,
-    word_bag: Vec<char>,
-) -> Vec<Vec<&Box<ValidWord>>> {
+fn validate_sub_board(v: &[&Box<ValidWord>]) -> bool {
+    // Check if the sub-board is valid
+    // This function ensures that the sub-board can be formed with the available letters
+
+    let mut used = HashMap::new();
+    let mut any_used = 0;
+    for word in v {
+        let wc = word.1; // Wildcard used
+        let word = word.0;
+        for &c in word.iter() {
+            *used.entry(c).or_insert(0) += 1;
+        }
+        if wc {
+            any_used += 1;
+        }
+    }
+    for l in &POSSIBLE_LETTERS {
+        if used.get(&l.ch).unwrap_or(&0) > &l.num {
+            return false;
+        }
+    }
+    if any_used > 1 {
+        return false;
+    }
+    true
+}
+
+fn generate_k_sets(valid_words: Vec<&Box<ValidWord>>, k: i32) -> Vec<Vec<&Box<ValidWord>>> {
     // Generate all combinations of k valid words from the valid_words vector, parallelized with Rayon
     let n = valid_words.len();
     if k == 0 {
@@ -115,36 +139,53 @@ fn generate_k_sets(
     (0..n)
         .into_par_iter()
         .map(|i| {
-            let cur_valid_word = &valid_words[i];
-            // Prune word bag
-            let mut new_word_bag = word_bag.clone();
-            for &c in cur_valid_word.0.iter() {
-                if let Some(pos) = new_word_bag.iter().position(|&x| x == c) {
-                    new_word_bag.remove(pos);
-                } else if cur_valid_word.1 {
-                    // If wildcard is used, remove it
-                    if let Some(pos) = new_word_bag.iter().position(|&x| x == '*') {
-                        new_word_bag.remove(pos);
-                    } else {
-                        return vec![];
-                    }
-                } else {
-                    return vec![];
+            let mut sub_combinations = generate_k_sets(valid_words[i + 1..].to_vec(), k - 1);
+            let mut results = Vec::new();
+            for sub in &mut sub_combinations {
+                if !validate_sub_board(sub) {
+                    continue;
                 }
+                sub.insert(0, valid_words[i]);
+                results.push(sub.clone());
             }
-            // Drop off other valid_words that are not valid for the current word_bag
-            let next_valid_words = valid_words[i + 1..]
-                .iter()
-                .filter(|&&w| {
-                    w.0.iter()
-                        .all(|&c| new_word_bag.iter().any(|&x| x == c || (w.1 && x == '*')))
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            generate_k_sets(next_valid_words, k - 1, new_word_bag)
+            results
         })
         .flatten()
         .collect()
+}
+
+fn generate_k_sets_memo<'a>(
+    valid_words: Arc<Vec<&'a Box<ValidWord>>>,
+    k: i32,
+    start: usize,
+) -> Vec<Vec<&'a Box<ValidWord>>> {
+    if k == 0 {
+        return vec![Vec::new()];
+    }
+    let n = valid_words.len();
+    let batch_size = 32; // Tune this for your workload
+    let batch_starts: Vec<usize> = (start..n).step_by(batch_size).collect();
+    let results: Vec<Vec<&Box<ValidWord>>> = batch_starts
+        .into_par_iter()
+        .flat_map(|batch_start| {
+            let mut local_results = Vec::new();
+            let batch_end = (batch_start + batch_size).min(n);
+            for i in batch_start..batch_end {
+                let sub_combinations = generate_k_sets_memo(valid_words.clone(), k - 1, i + 1);
+                for mut sub in sub_combinations {
+                    if !validate_sub_board(&sub) {
+                        continue;
+                    }
+                    sub.push(valid_words[i]); // push at end, no insert at front
+                    // if validate_sub_board(&sub) {
+                    local_results.push(sub);
+                    // }
+                }
+            }
+            local_results
+        })
+        .collect();
+    results
 }
 
 fn main() {
@@ -159,7 +200,7 @@ fn main() {
     }
 
     // Read words from file
-    let file = File::open("sgb-words.txt").expect("data.txt not found");
+    let file = File::open("sgb-words-mini.txt").expect("data.txt not found");
     let reader = BufReader::new(file);
     let words: HashSet<String> = reader
         .lines()
@@ -192,7 +233,7 @@ fn main() {
             // If we reach here, the word is valid
             Some(Box::new((
                 [
-                    word.chars().next().unwrap(),
+                    word.chars().nth(0).unwrap(),
                     word.chars().nth(1).unwrap(),
                     word.chars().nth(2).unwrap(),
                     word.chars().nth(3).unwrap(),
@@ -210,8 +251,8 @@ fn main() {
 
     // Now, since we have all valid words, we can make a collection of all valid combinations of words into 5 rows
     const K: i32 = 3;
-    let valid_sets = generate_k_sets(valid_words_copy, K, letter_bag);
-    // let valid_sets = generate_k_sets_memo(valid_words_copy.into(), K, 0);
+    // let valid_sets = generate_k_sets(valid_words_copy, K);
+    let valid_sets = generate_k_sets_memo(valid_words_copy.into(), K, 0);
     println!("Total valid sets of {K} rows found: {}", valid_sets.len());
 
     // exit early
@@ -230,7 +271,7 @@ fn main() {
     let total = valid_rows_arc.len().pow(5);
     println!("Total combinations to check: {}", total);
     let batch_size = 1_000_000usize;
-    let num_batches = total.div_ceil(batch_size);
+    let num_batches = (total + batch_size - 1) / batch_size;
     let progress = Arc::new(Mutex::new(0usize));
     let best = (0..num_batches)
         .into_par_iter()
@@ -255,7 +296,7 @@ fn main() {
                         &valid_rows_arc[i4],
                     ];
                     // Check bag usage
-                    if !false {
+                    if !validate_sub_board(&board) {
                         continue;
                     }
                     // // Check columns
@@ -273,7 +314,7 @@ fn main() {
                     for (r, word) in board.iter().enumerate() {
                         let word = word.0;
                         for (c, ch) in word.iter().enumerate() {
-                            score += *letter_scores.get(ch).unwrap_or(&0) * SCHEMA[r][c];
+                            score += *letter_scores.get(&ch).unwrap_or(&0) * SCHEMA[r][c];
                         }
                     }
                     if score > local_best.0 {
@@ -297,7 +338,7 @@ fn main() {
         )
         .max_by_key(|(score, _)| *score)
         .unwrap();
-    println!();
+    println!("");
     if best.0 > 0 {
         println!("Best board:");
         for row in &best.1 {
