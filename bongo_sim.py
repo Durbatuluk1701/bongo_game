@@ -95,6 +95,7 @@ print(f"Row {range(0, 5)} examples:", [word for word, _ in valid_rows[:5]])
 if len(valid_rows) > 5:
     print("... and more rows available.")
 
+
 # Brute force all possible 5x5 boards (very slow for large bags!)
 # For demo, we only try combinations of valid rows
 def board_score_and_valid(board_rows):
@@ -123,6 +124,7 @@ def board_score_and_valid(board_rows):
             score += letter_scores.get(ch, 0) * SCHEMA[r][c]
     return (score, [word for word, _ in board_rows])
 
+
 print("Starting parallel brute-force search...")
 max_score = 0
 best_board = None
@@ -134,14 +136,25 @@ with concurrent.futures.ProcessPoolExecutor() as executor:
     for i, board_rows in enumerate(combos):
         chunk.append(board_rows)
         if len(chunk) == chunk_size:
-            futures.append(executor.submit(
-                lambda boards: max(filter(None, map(board_score_and_valid, boards)), default=(0, None)),
-                chunk))
+            futures.append(
+                executor.submit(
+                    lambda boards: max(
+                        filter(None, map(board_score_and_valid, boards)),
+                        default=(0, None),
+                    ),
+                    chunk,
+                )
+            )
             chunk = []
     if chunk:
-        futures.append(executor.submit(
-            lambda boards: max(filter(None, map(board_score_and_valid, boards)), default=(0, None)),
-            chunk))
+        futures.append(
+            executor.submit(
+                lambda boards: max(
+                    filter(None, map(board_score_and_valid, boards)), default=(0, None)
+                ),
+                chunk,
+            )
+        )
     for fut in concurrent.futures.as_completed(futures):
         score, board = fut.result()
         if score > max_score:
