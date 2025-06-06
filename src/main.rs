@@ -1,8 +1,8 @@
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::Write;
 use std::io::{BufRead, BufReader};
+use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -93,6 +93,9 @@ const SCHEMA: [[i32; 5]; 5] = [
     [1, 1, 1, 2, 1],
 ];
 
+const BONUS_WORD_INDS: [(usize, usize); 4] = [(0, 2), (1, 2), (2, 2), (3, 3)];
+
+type FourWord = [char; 4];
 type FiveWord = [char; 5];
 type ValidWord = (FiveWord, bool); // (word, wildcard_used)
 fn print_five_word(word: FiveWord) -> String {
@@ -181,6 +184,32 @@ fn permute_board<'a>(board: &'a [&'a ValidWord]) -> Vec<Vec<&'a ValidWord>> {
     result
 }
 
+fn score_board(
+    board: &[&ValidWord],
+    letter_scores: &HashMap<char, i32>,
+    four_letter_words: &HashSet<FourWord>,
+) -> i32 {
+    let mut score = 0;
+    for (r, word) in board.iter().enumerate() {
+        for (c, ch) in word.0.iter().enumerate() {
+            score += letter_scores.get(ch).unwrap_or(&0) * SCHEMA[r][c];
+        }
+    }
+    // Now add the bonus words score
+    let mut new_word: FourWord = ['*'; 4];
+    for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
+        if let Some(word) = board.get(r) {
+            new_word[i] = word.0[c];
+        }
+    }
+    if four_letter_words.contains(&new_word) {
+        for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
+            score += letter_scores.get(&new_word[i]).unwrap_or(&0) * SCHEMA[r][c];
+        }
+    }
+    score
+}
+
 fn main() {
     // Hardcoded letter bag
     let mut letter_bag = Vec::new();
@@ -194,18 +223,36 @@ fn main() {
 
     // Read words from file
     let file = File::open("sgb-words-mini.txt").expect("data.txt not found");
+    let bongo_file = File::open("bongo-common-words.txt").expect("data.txt not found");
     // let file = File::open("bongo-common-words.txt").expect("data.txt not found");
     let reader = BufReader::new(file);
+    let bongo_reader = BufReader::new(bongo_file);
     let lines = reader.lines().collect::<Vec<_>>();
+    let bongo_lines = bongo_reader.lines().collect::<Vec<_>>();
+    let lines = lines.into_iter().filter_map(|l| l.ok()).collect::<Vec<_>>();
     println!("Number of lines in file: {}", lines.len());
-    let words: HashSet<String> = lines
+    let four_words: HashSet<FourWord> = bongo_lines
         .into_iter()
         .filter_map(|l| l.ok())
         .map(|w| w.trim().to_uppercase())
+        .filter(|w| w.len() == 4)
+        .map(|w| {
+            let mut chars = w.chars();
+            [
+                chars.next().unwrap(),
+                chars.next().unwrap(),
+                chars.next().unwrap(),
+                chars.next().unwrap(),
+            ]
+        })
+        .collect();
+    let five_words: HashSet<String> = lines
+        .into_iter()
+        .map(|w| w.trim().to_uppercase())
         .filter(|w| w.len() == 5)
         .collect();
-    println!("Number of 5 words: {}", words.len());
-    let words_arc = Arc::new(words);
+    println!("Number of 5 words: {}", five_words.len());
+    let words_arc = Arc::new(five_words);
 
     // Generate all possible valid rows
     let valid_words: Vec<Box<ValidWord>> = words_arc
@@ -279,13 +326,7 @@ fn main() {
                     // Check all permutations of the board
                     let permutation = permute_board(board);
                     for permut in permutation {
-                        let mut score = 0;
-                        for (r, word) in permut.iter().enumerate() {
-                            let word = word.0;
-                            for (c, ch) in word.iter().enumerate() {
-                                score += *letter_scores.get(ch).unwrap_or(&0) * SCHEMA[r][c];
-                            }
-                        }
+                        let score = score_board(board, &letter_scores, &four_words);
                         if score > local_best.0 {
                             local_best =
                                 (score, permut.iter().map(|word| word.0).collect::<Vec<_>>());
