@@ -1,6 +1,7 @@
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
+use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 
@@ -95,11 +96,7 @@ const SCHEMA: [[i32; 5]; 5] = [
 type FiveWord = [char; 5];
 type ValidWord = (FiveWord, bool); // (word, wildcard_used)
 fn print_five_word(word: FiveWord) -> String {
-    let mut s = String::new();
-    for c in word.iter() {
-        s.push(*c);
-    }
-    s
+    word.iter().collect()
 }
 
 fn generate_k_sets(
@@ -141,27 +138,26 @@ fn generate_k_sets(
                 })
                 .cloned()
                 .collect::<Vec<_>>();
-            let x = generate_k_sets(next_valid_words, k - 1, new_word_bag)
+            generate_k_sets(next_valid_words, k - 1, new_word_bag)
                 .into_iter()
                 .map(|mut set| {
                     set.push(valid_words[i]);
                     set
                 })
-                .collect::<Vec<Vec<_>>>();
-            x
+                .collect::<Vec<Vec<_>>>()
         })
         .flatten()
         .collect()
 }
 
-fn permute_board<'a>(board: &'a Vec<&'a Box<ValidWord>>) -> Vec<Vec<&'a Box<ValidWord>>> {
+fn permute_board<'a>(board: &'a [&'a Box<ValidWord>]) -> Vec<Vec<&'a Box<ValidWord>>> {
     if board.len() != 5 {
         panic!("Board must have exactly 5 words.");
     }
     let mut result = Vec::new();
     let mut indices: Vec<usize> = (0..5).collect();
     loop {
-        let mut current_set = Vec::new();
+        let mut current_set = Vec::with_capacity(5);
         for &i in &indices {
             current_set.push(board[i]);
         }
@@ -247,7 +243,6 @@ fn main() {
     let valid_words_copy: Vec<&Box<ValidWord>> = valid_words.iter().collect();
     print!("Copied {} valid words to memory. ", valid_words.len());
     // flush io
-    use std::io::Write;
     std::io::stdout().flush().unwrap();
 
     // Now, since we have all valid words, we can make a collection of all valid combinations of words into 5 rows
@@ -308,7 +303,6 @@ fn main() {
                     let filled = (percent / 100.0 * bar_len as f64).round() as usize;
                     let bar: String = "#".repeat(filled) + &"-".repeat(bar_len - filled);
                     print!("\r[{}] {:.2}% ({} / {})", bar, percent, *done, num_batches);
-                    use std::io::Write;
                     std::io::stdout().flush().unwrap();
                 }
                 local_best
