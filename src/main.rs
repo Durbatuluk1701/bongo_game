@@ -71,7 +71,7 @@ const POSSIBLE_LETTERS: [Letter; 14] = [
     },
 ];
 
-fn letter_to_score(c: &char) -> i32 {
+fn letter_to_score(c: &char) -> u32 {
     match c {
         'B' => 50,
         'G' => 45,
@@ -83,7 +83,7 @@ fn letter_to_score(c: &char) -> i32 {
         'L' => 9,
         'O' => 7,
         'R' => 7,
-        'S' => 7,
+        'S' => 5,
         'A' => 5,
         'E' => 5,
         '*' => 0,
@@ -91,7 +91,7 @@ fn letter_to_score(c: &char) -> i32 {
     } 
 }
 
-const SCHEMA: [[i32; 5]; 5] = [
+const SCHEMA: [[u32; 5]; 5] = [
     [1, 1, 1, 1, 1],
     [1, 1, 1, 1, 1],
     [1, 1, 1, 1, 1],
