@@ -161,7 +161,6 @@ const BONUS_WORD_INDS: [(usize, usize); 4] = [(0, 2), (1, 2), (2, 2), (3, 3)];
 //         ch: '*',
 //         num: 1,   // Wildcard
 //         score: 0, // Wildcard has no score
-//     },
 // ];
 
 // const SCHEMA: [[i32; 5]; 5] = [
@@ -467,29 +466,38 @@ fn main() {
     const K: i32 = 5;
     // let valid_sets = generate_k_sets(valid_words_copy, K, letter_bag);
     // let valid_sets = generate_k_sets_memo(valid_words_copy.into(), K, 0);
-    let bonus_word = ("BOMB".into(), None);
-    let bonus_words = vec![bonus_word.clone()];
-    let valid_sets = generate_boards_from_bonus(&bonus_word, valid_words, letter_bag, 0);
+    // let valid_sets = generate_boards_from_bonus(&bonus_word, valid_words, letter_bag, 0);
 
-    // let valid_sets: Vec<Vec<&ValidWord>> = bonus_words
-    //     .par_iter()
-    //     .map(|bonus_word| {
-    //         generate_boards_from_bonus(bonus_word, valid_words.clone(), letter_bag.clone(), 0)
-    //     })
-    //     .flatten()
-    //     .collect();
-    println!("Total valid sets of 5 rows found: {}", valid_sets.len());
-    // Check that "unban", "trots", "gamer", "adobe", "slabs" set is in the valid sets
-    for set in &valid_sets {
-        if set.contains(&&("UNBAN".into(), None))
-            && set.contains(&&("TROTS".into(), None))
-            && set.contains(&&("GAMER".into(), None))
-            && set.contains(&&("ADOBE".into(), None))
-            && set.contains(&&("SLABS".into(), None))
-        {
-            println!("Found the set: {:?}", set);
-        }
-    }
+    let progress = Arc::new(Mutex::new(0usize));
+    let total_bonus = bonus_words.len();
+    let valid_sets: Vec<Vec<&ValidWord>> = bonus_words
+        .par_iter()
+        .map_init(
+            || progress.clone(),
+            |progress, bonus_word| {
+                let result = generate_boards_from_bonus(
+                    bonus_word,
+                    valid_words.clone(),
+                    letter_bag.clone(),
+                    0,
+                );
+                // Progress bar update
+                {
+                    let mut done = progress.lock().unwrap();
+                    *done += 1;
+                    let percent = (*done as f64) * 100.0 / (total_bonus as f64);
+                    let bar_len = 40;
+                    let filled = (percent / 100.0 * bar_len as f64).round() as usize;
+                    let bar: String = "#".repeat(filled) + &"-".repeat(bar_len - filled);
+                    print!("\r[{}] {:.2}% ({} / {})", bar, percent, *done, total_bonus);
+                    std::io::stdout().flush().unwrap();
+                }
+                result
+            },
+        )
+        .flatten()
+        .collect();
+    println!("\nTotal valid sets of 5 rows found: {}", valid_sets.len());
     return;
     // Print the first 5 sets
     for (i, set) in valid_sets.iter().take(5).enumerate() {
