@@ -1,7 +1,6 @@
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::File;
-use std::hash::Hash;
 use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
@@ -175,45 +174,14 @@ const BONUS_WORD_INDS: [(usize, usize); 4] = [(0, 2), (1, 2), (2, 2), (3, 3)];
 
 type ValidWord = (String, Option<char>); // (word, wildcard_used)
 
-fn permute_board<'a>(board: &'a [&'a ValidWord]) -> Vec<Vec<&'a ValidWord>> {
-    if board.len() != 5 {
-        panic!("Board must have exactly 5 words.");
-    }
-    let mut result = Vec::new();
-    let mut indices: Vec<usize> = (0..5).collect();
-    loop {
-        let mut current_set = Vec::with_capacity(5);
-        for &i in &indices {
-            current_set.push(board[i]);
-        }
-        result.push(current_set);
-
-        // Generate next permutation
-        let mut i = 4;
-        while i > 0 && indices[i - 1] >= indices[i] {
-            i -= 1;
-        }
-        if i == 0 {
-            break; // No more permutations
-        }
-        let mut j = 4;
-        while indices[j] <= indices[i - 1] {
-            j -= 1;
-        }
-        indices.swap(i - 1, j);
-        indices[i..].reverse();
-    }
-    result
-}
-
 fn score_board(
-    board: &[&ValidWord],
+    board: &Vec<Option<&ValidWord>>,
     letter_scores: &HashMap<char, i32>,
-    four_letter_words: &HashSet<&[char; 4]>,
-) -> i32 {
+    bonus_word_used: bool,
+) -> u32 {
     let mut wildcard_letter = '*';
     for word in board.iter() {
-        if let Some(wildchar) = word.1 {
+        if let Some(wildchar) = word.unwrap().1 {
             // If wildcard is used, we can use any letter in its place
             wildcard_letter = wildchar;
         }
@@ -223,7 +191,7 @@ fn score_board(
         .iter()
         .enumerate()
         .filter_map(|(r, word)| {
-            word.0.chars().enumerate().find_map(|(c, ch)| {
+            word.unwrap().0.chars().enumerate().find_map(|(c, ch)| {
                 if ch == wildcard_letter {
                     Some((r, c))
                 } else {
@@ -237,20 +205,32 @@ fn score_board(
     if all_wildcard_indices.is_empty() {
         let mut local_score = 0;
         for (row, word) in board.iter().enumerate() {
-            for (col, ch) in word.0.chars().enumerate() {
-                local_score += letter_scores.get(&ch).unwrap_or(&0) * SCHEMA[row][col];
+            let mut word_score = 0.0;
+            for (col, ch) in word.unwrap().0.chars().enumerate() {
+                word_score += (letter_scores.get(&ch).unwrap_or(&0) * SCHEMA[row][col]) as f64;
+            }
+            if true
+            //is common word
+            {
+                local_score += f64::ceil(word_score * 1.3) as u32;
             }
         }
         // Now add the bonus words score
         let mut new_word = ['*'; 4];
-        for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
+        for (i, &(r, c)) in BONUS_WORD_INDS.iter().enumerate() {
             if let Some(word) = board.get(r) {
-                new_word[i] = word.0.chars().nth(c).unwrap();
+                new_word[i] = word.unwrap().0.chars().nth(c).unwrap();
             }
         }
-        if four_letter_words.contains(&new_word) {
-            for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
-                local_score += letter_scores.get(&new_word[i]).unwrap_or(&0) * SCHEMA[r][c];
+        if bonus_word_used {
+            let mut word_score = 0.0;
+            for (i, &(r, c)) in BONUS_WORD_INDS.iter().enumerate() {
+                word_score += (letter_scores.get(&new_word[i]).unwrap_or(&0) * SCHEMA[r][c]) as f64;
+            }
+            if true
+            //is common word
+            {
+                local_score += f64::ceil(word_score * 1.3) as u32;
             }
         }
         if max_score < local_score {
@@ -260,29 +240,42 @@ fn score_board(
         for (row1, col1) in all_wildcard_indices {
             let mut local_score = 0;
             for (row, word) in board.iter().enumerate() {
-                for (col, ch) in word.0.chars().enumerate() {
+                let mut word_score = 0.0;
+                for (col, ch) in word.unwrap().0.chars().enumerate() {
                     if row == row1 && col == col1 {
                         // If this is the wildcard position, use the wildcard letter
                         continue;
                         // score += letter_scores.get(&wildcard_letter).unwrap_or(&0) * SCHEMA[row][col];
                     }
-                    local_score += letter_scores.get(&ch).unwrap_or(&0) * SCHEMA[row][col];
+                    word_score += (letter_scores.get(&ch).unwrap_or(&0) * SCHEMA[row][col]) as f64;
+                }
+                if true
+                //is common word
+                {
+                    local_score += f64::ceil(word_score * 1.3) as u32;
                 }
             }
             // Now add the bonus words score
             let mut new_word = ['*'; 4];
-            for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
+            for (i, &(r, c)) in BONUS_WORD_INDS.iter().enumerate() {
                 if let Some(word) = board.get(r) {
-                    new_word[i] = word.0.chars().nth(c).unwrap();
+                    new_word[i] = word.unwrap().0.chars().nth(c).unwrap();
                 }
             }
-            if four_letter_words.contains(&new_word) {
-                for (i, &(r, c)) in (&BONUS_WORD_INDS).into_iter().enumerate() {
+            if bonus_word_used {
+                let mut word_score = 0.0;
+                for (i, &(r, c)) in BONUS_WORD_INDS.iter().enumerate() {
                     if r == row1 && c == col1 {
                         // If this is the wildcard position, use the wildcard letter
                         continue;
                     }
-                    local_score += letter_scores.get(&new_word[i]).unwrap_or(&0) * SCHEMA[r][c];
+                    word_score +=
+                        (letter_scores.get(&new_word[i]).unwrap_or(&0) * SCHEMA[r][c]) as f64;
+                }
+                if true
+                //is common word
+                {
+                    local_score += f64::ceil(word_score * 1.3) as u32;
                 }
             }
             if max_score < local_score {
@@ -298,9 +291,9 @@ fn generate_boards_from_bonus<'a>(
     valid_words: Vec<&'a ValidWord>,
     letter_bag: Vec<char>,
     row: usize,
-) -> Vec<Vec<&'a ValidWord>> {
+) -> Vec<Vec<Option<&'a ValidWord>>> {
     if row > 4 {
-        return vec![Vec::new()];
+        return vec![vec![None; 5]];
     }
     let n = valid_words.len();
     if BONUS_WORD_INDS.map(|(i, _)| i).contains(&row) {
@@ -345,10 +338,11 @@ fn generate_boards_from_bonus<'a>(
                 generate_boards_from_bonus(bonus_word, next_valid_words, new_letter_bag, row + 1)
                     .into_iter()
                     .map(|mut set| {
-                        set.push(cur_valid_word);
+                        //set.push(cur_valid_word);
+                        set[row] = Some(cur_valid_word);
                         set
                     })
-                    .collect::<Vec<Vec<_>>>()
+                    .collect::<Vec<_>>()
             })
             .flatten()
             .collect()
@@ -388,10 +382,11 @@ fn generate_boards_from_bonus<'a>(
                 generate_boards_from_bonus(bonus_word, next_valid_words, new_word_bag, row + 1)
                     .into_iter()
                     .map(|mut set| {
-                        set.push(cur_valid_word);
+                        //set.push(cur_valid_word);
+                        set[row] = Some(cur_valid_word);
                         set
                     })
-                    .collect::<Vec<Vec<_>>>()
+                    .collect::<Vec<_>>()
             })
             .flatten()
             .collect()
@@ -425,7 +420,7 @@ fn main() {
             for c in word.chars() {
                 if let Some(pos) = bag.iter().position(|&x| x == c) {
                     bag.remove(pos);
-                } else if wildcard_char == None {
+                } else if wildcard_char.is_none() {
                     if let Some(pos) = bag.iter().position(|&x| x == '*') {
                         bag.remove(pos);
                         wildcard_char = Some(c);
@@ -443,34 +438,22 @@ fn main() {
 
     let bonus_words: Vec<&ValidWord> = valid_words
         .iter()
-        .filter_map(|w| {
-            if w.0.len() == BONUS_WORD_INDS.len() {
-                Some(w)
-            } else {
-                None
-            }
-        })
+        .filter(|w| w.0.len() == BONUS_WORD_INDS.len())
         .collect();
     println!("Number of bonus words: {}", bonus_words.len());
 
     // TODO: adjust to check 3 and 4 words as well
     let valid_words: Vec<&ValidWord> = valid_words
         .iter()
-        .filter_map(|w| if w.0.len() == 5 { Some(w) } else { None })
+        .filter(|w| w.0.len() == 5)
         .collect();
     println!("Number of 5 words: {}", valid_words.len());
     // flush io
     std::io::stdout().flush().unwrap();
 
-    // Now, since we have all valid words, we can make a collection of all valid combinations of words into 5 rows
-    const K: i32 = 5;
-    // let valid_sets = generate_k_sets(valid_words_copy, K, letter_bag);
-    // let valid_sets = generate_k_sets_memo(valid_words_copy.into(), K, 0);
-    // let valid_sets = generate_boards_from_bonus(&bonus_word, valid_words, letter_bag, 0);
-
     let progress = Arc::new(Mutex::new(0usize));
     let total_bonus = bonus_words.len();
-    let valid_sets: Vec<Vec<&ValidWord>> = bonus_words
+    let scored_sets = vec![("BOMB".to_string(), None)]//bonus_words
         .par_iter()
         .map_init(
             || progress.clone(),
@@ -481,6 +464,18 @@ fn main() {
                     letter_bag.clone(),
                     0,
                 );
+                
+                let result = result
+                    .iter()
+                    .fold((vec![], 0), |(prev_board, prev_score), board| {
+                        let score = score_board(board, &letter_scores, true);
+                        if score > prev_score {
+                            (board.to_vec(), score)
+                        } else {
+                            (prev_board, prev_score)
+                        }
+                    });
+                
                 // Progress bar update
                 {
                     let mut done = progress.lock().unwrap();
@@ -492,76 +487,27 @@ fn main() {
                     print!("\r[{}] {:.2}% ({} / {})", bar, percent, *done, total_bonus);
                     std::io::stdout().flush().unwrap();
                 }
+
                 result
             },
         )
-        .flatten()
-        .collect();
-    println!("\nTotal valid sets of 5 rows found: {}", valid_sets.len());
-    return;
+        .collect::<Vec<(Vec<Option<&ValidWord>>, _)>>();
     // Print the first 5 sets
-    for (i, set) in valid_sets.iter().take(5).enumerate() {
+    for (i, set) in scored_sets.iter().take(5).enumerate() {
         println!(
-            "Set {}: {:?}",
+            "Set {} with score {}: {:?}",
             i,
-            set.iter().map(|w| w.0.clone()).collect::<Vec<_>>()
+            set.1,
+            set.0
+                .iter()
+                .map(|w| w.unwrap().0.clone())
+                .collect::<Vec<_>>(),
         );
     }
 
-    // Brute force all possible 5x5 boards (parallel, batched)
-    let four_letter_words: HashSet<[char; 4]> = bonus_words
-        .iter()
-        .map(|w| {
-            let mut arr = ['*'; 4];
-            for (i, c) in w.0.chars().enumerate() {
-                arr[i] = c;
-            }
-            arr
-        })
-        .collect();
-    let four_letter_words: HashSet<&[char; 4]> = four_letter_words.iter().collect();
-    let valid_sets_arc = Arc::new(valid_sets);
-    let total = valid_sets_arc.len();
-    println!("Total combinations to check: {}", total);
-    let batch_size = 100_000usize;
-    let num_batches = total.div_ceil(batch_size);
-    let progress = Arc::new(Mutex::new(0usize));
-    let best = (0..num_batches)
-        .into_par_iter()
-        .map_init(
-            || progress.clone(),
-            |progress, batch_idx| {
-                let mut local_best = (0, Vec::new());
-                let batch_start = batch_idx * batch_size;
-                let batch_end = ((batch_idx + 1) * batch_size).min(total);
-                for idx in batch_start..batch_end {
-                    // Check all permutations of the board
-                    let permutation = permute_board(&valid_sets_arc[idx]);
-                    for permut in permutation {
-                        let score = score_board(&permut, &letter_scores, &four_letter_words);
-                        if score > local_best.0 {
-                            local_best = (
-                                score,
-                                permut.iter().map(|word| word.0.chars()).collect::<Vec<_>>(),
-                            );
-                        }
-                    }
-                }
-                // Progress bar update (mutex)
-                {
-                    let mut done = progress.lock().unwrap();
-                    *done += 1;
-                    let percent = (*done as f64) * 100.0 / (num_batches as f64);
-                    let bar_len = 40;
-                    let filled = (percent / 100.0 * bar_len as f64).round() as usize;
-                    let bar: String = "#".repeat(filled) + &"-".repeat(bar_len - filled);
-                    print!("\r[{}] {:.2}% ({} / {})", bar, percent, *done, num_batches);
-                    std::io::stdout().flush().unwrap();
-                }
-                local_best
-            },
-        )
-        .max_by_key(|(score, _)| *score)
+    let best = scored_sets
+        .into_iter()
+        .max_by_key(|(_, score)| *score)
         .unwrap();
     // for best in bests {
     //     if best.0 > 0 {
@@ -572,12 +518,12 @@ fn main() {
     //     }
     // }
     println!();
-    if best.0 > 0 {
+    if best.1 > 0 {
         println!("Best board:");
-        for row in &best.1 {
+        for row in &best.0 {
             println!("{:?}", row);
         }
-        println!("Score: {}", best.0);
+        println!("Score: {}", best.1);
     } else {
         println!("No valid board found.");
     }
