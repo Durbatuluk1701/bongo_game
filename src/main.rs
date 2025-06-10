@@ -458,7 +458,7 @@ fn main() {
 
     let progress = Arc::new(Mutex::new(0usize));
     let total_bonus = bonus_words.len();
-    let scored_sets = vec![("BOMB".to_string(), None)]//bonus_words
+    let scored_sets = bonus_words
         .par_iter()
         .map_init(
             || progress.clone(),
