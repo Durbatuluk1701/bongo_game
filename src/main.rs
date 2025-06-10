@@ -105,57 +105,57 @@ const BONUS_WORD_INDS: [(usize, usize); 4] = [(0, 2), (1, 2), (2, 2), (3, 3)];
 //     Letter {
 //         ch: 'H',
 //         num: 1,
-//         score: 40
+//         score: 40,
 //     },
 //     Letter {
 //         ch: 'M',
 //         num: 2,
-//         score: 40
+//         score: 40,
 //     },
 //     Letter {
 //         ch: 'C',
 //         num: 1,
-//         score: 35
+//         score: 35,
 //     },
 //     Letter {
 //         ch: 'Y',
 //         num: 1,
-//         score: 35
+//         score: 35,
 //     },
 //     Letter {
 //         ch: 'L',
 //         num: 2,
-//         score: 10
+//         score: 10,
 //     },
 //     Letter {
 //         ch: 'I',
 //         num: 1,
-//         score: 9
+//         score: 9,
 //     },
 //     Letter {
 //         ch: 'T',
 //         num: 3,
-//         score: 9
+//         score: 9,
 //     },
 //     Letter {
 //         ch: 'R',
 //         num: 1,
-//         score: 7
+//         score: 7,
 //     },
 //     Letter {
 //         ch: 'A',
 //         num: 1,
-//         score: 5
+//         score: 5,
 //     },
 //     Letter {
 //         ch: 'S',
 //         num: 3,
-//         score: 5
+//         score: 5,
 //     },
 //     Letter {
 //         ch: 'E',
 //         num: 6,
-//         score: 5
+//         score: 5,
 //     },
 //     Letter {
 //         ch: '*',
@@ -332,7 +332,7 @@ fn generate_boards_from_bonus<'a>(
                     }
                 }
                 // Drop off other valid_words that are not valid for the current word_bag
-                let next_valid_words = valid_words[i + 1..]
+                let next_valid_words = valid_words
                     .iter()
                     .filter(|&&w| {
                         w.0.chars().all(|c| {
@@ -375,7 +375,7 @@ fn generate_boards_from_bonus<'a>(
                     }
                 }
                 // Drop off other valid_words that are not valid for the current word_bag
-                let next_valid_words = valid_words[i + 1..]
+                let next_valid_words = valid_words
                     .iter()
                     .filter(|&&w| {
                         w.0.chars().all(|c| {
@@ -467,14 +467,30 @@ fn main() {
     const K: i32 = 5;
     // let valid_sets = generate_k_sets(valid_words_copy, K, letter_bag);
     // let valid_sets = generate_k_sets_memo(valid_words_copy.into(), K, 0);
-    let valid_sets: Vec<Vec<&ValidWord>> = bonus_words
-        .par_iter()
-        .map(|bonus_word| {
-            generate_boards_from_bonus(bonus_word, valid_words.clone(), letter_bag.clone(), 0)
-        })
-        .flatten()
-        .collect();
+    let bonus_word = ("BOMB".into(), None);
+    let bonus_words = vec![bonus_word.clone()];
+    let valid_sets = generate_boards_from_bonus(&bonus_word, valid_words, letter_bag, 0);
+
+    // let valid_sets: Vec<Vec<&ValidWord>> = bonus_words
+    //     .par_iter()
+    //     .map(|bonus_word| {
+    //         generate_boards_from_bonus(bonus_word, valid_words.clone(), letter_bag.clone(), 0)
+    //     })
+    //     .flatten()
+    //     .collect();
     println!("Total valid sets of 5 rows found: {}", valid_sets.len());
+    // Check that "unban", "trots", "gamer", "adobe", "slabs" set is in the valid sets
+    for set in &valid_sets {
+        if set.contains(&&("UNBAN".into(), None))
+            && set.contains(&&("TROTS".into(), None))
+            && set.contains(&&("GAMER".into(), None))
+            && set.contains(&&("ADOBE".into(), None))
+            && set.contains(&&("SLABS".into(), None))
+        {
+            println!("Found the set: {:?}", set);
+        }
+    }
+    return;
     // Print the first 5 sets
     for (i, set) in valid_sets.iter().take(5).enumerate() {
         println!(
