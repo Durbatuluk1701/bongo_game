@@ -114,47 +114,47 @@ const BONUS_WORD_INDS: [(usize, usize); 4] = [(0, 2), (1, 2), (2, 2), (3, 3)];
 //     Letter {
 //         ch: 'C',
 //         num: 1,
-//         score: 35 
+//         score: 35
 //     },
 //     Letter {
 //         ch: 'Y',
 //         num: 1,
-//         score: 35 
+//         score: 35
 //     },
 //     Letter {
 //         ch: 'L',
 //         num: 2,
-//         score: 10 
+//         score: 10
 //     },
 //     Letter {
 //         ch: 'I',
 //         num: 1,
-//         score: 9 
+//         score: 9
 //     },
 //     Letter {
 //         ch: 'T',
 //         num: 3,
-//         score: 9 
+//         score: 9
 //     },
 //     Letter {
 //         ch: 'R',
 //         num: 1,
-//         score: 7 
+//         score: 7
 //     },
 //     Letter {
 //         ch: 'A',
 //         num: 1,
-//         score: 5 
+//         score: 5
 //     },
 //     Letter {
 //         ch: 'S',
 //         num: 3,
-//         score: 5 
+//         score: 5
 //     },
 //     Letter {
 //         ch: 'E',
 //         num: 6,
-//         score: 5 
+//         score: 5
 //     },
 //     Letter {
 //         ch: '*',
@@ -293,7 +293,12 @@ type ValidWord = (String, Option<char>); // (word, wildcard_used)
 //     max_score
 // }
 
-fn generate_boards_from_bonus<'a>(bonus_word: &ValidWord, valid_words: Vec<&'a ValidWord>, letter_bag: Vec<char>, row: usize) -> Vec<Vec<&'a ValidWord>> {
+fn generate_boards_from_bonus<'a>(
+    bonus_word: &ValidWord,
+    valid_words: Vec<&'a ValidWord>,
+    letter_bag: Vec<char>,
+    row: usize,
+) -> Vec<Vec<&'a ValidWord>> {
     if row > 4 {
         return vec![Vec::new()];
     }
@@ -302,94 +307,94 @@ fn generate_boards_from_bonus<'a>(bonus_word: &ValidWord, valid_words: Vec<&'a V
         let index = BONUS_WORD_INDS[row].1;
 
         (0..n)
-        .into_par_iter()
-        .map(|i| {
-            let cur_valid_word = &valid_words[i];
-            if cur_valid_word.0.chars().nth(index) != bonus_word.0.chars().nth(row) {
-               return vec![];
-            }
+            .into_par_iter()
+            .map(|i| {
+                let cur_valid_word = &valid_words[i];
+                if cur_valid_word.0.chars().nth(index) != bonus_word.0.chars().nth(row) {
+                    return vec![];
+                }
 
-            // Prune word bag
-            let mut new_letter_bag = letter_bag.clone();
-            for c in cur_valid_word.0.chars() {
-                if let Some(pos) = new_letter_bag.iter().position(|&x| x == c) {
-                    new_letter_bag.remove(pos);
-                } else if let Some(_ind) = cur_valid_word.1 {
-                    // If wildcard is used, remove it
-                    if let Some(pos) = new_letter_bag.iter().position(|&x| x == '*') {
+                // Prune word bag
+                let mut new_letter_bag = letter_bag.clone();
+                for c in cur_valid_word.0.chars() {
+                    if let Some(pos) = new_letter_bag.iter().position(|&x| x == c) {
                         new_letter_bag.remove(pos);
+                    } else if let Some(_ind) = cur_valid_word.1 {
+                        // If wildcard is used, remove it
+                        if let Some(pos) = new_letter_bag.iter().position(|&x| x == '*') {
+                            new_letter_bag.remove(pos);
+                        } else {
+                            return vec![];
+                        }
                     } else {
                         return vec![];
                     }
-                } else {
-                    return vec![];
                 }
-            }
-            // Drop off other valid_words that are not valid for the current word_bag
-            let next_valid_words = valid_words//[i + 1..]
-                .iter()
-                .filter(|&&w| {
-                    w.0.chars().all(|c| {
-                        new_letter_bag
-                            .iter()
-                            .any(|&x| x == c || (w.1 == Some(c) && x == '*'))
+                // Drop off other valid_words that are not valid for the current word_bag
+                let next_valid_words = valid_words //[i + 1..]
+                    .iter()
+                    .filter(|&&w| {
+                        w.0.chars().all(|c| {
+                            new_letter_bag
+                                .iter()
+                                .any(|&x| x == c || (w.1 == Some(c) && x == '*'))
+                        })
                     })
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            generate_boards_from_bonus(bonus_word, next_valid_words, new_letter_bag, row+1)
-                .into_iter()
-                .map(|mut set| {
-                    set.push(cur_valid_word);
-                    set
-                })
-                .collect::<Vec<Vec<_>>>()
-        })
-        .flatten()
-        .collect()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                generate_boards_from_bonus(bonus_word, next_valid_words, new_letter_bag, row + 1)
+                    .into_iter()
+                    .map(|mut set| {
+                        set.push(cur_valid_word);
+                        set
+                    })
+                    .collect::<Vec<Vec<_>>>()
+            })
+            .flatten()
+            .collect()
     } else {
         (0..n)
-        .into_par_iter()
-        .map(|i| {
-            let cur_valid_word = &valid_words[i];
-            // Prune word bag
-            let mut new_word_bag = letter_bag.clone();
-            for c in cur_valid_word.0.chars() {
-                if let Some(pos) = new_word_bag.iter().position(|&x| x == c) {
-                    new_word_bag.remove(pos);
-                } else if let Some(_ind) = cur_valid_word.1 {
-                    // If wildcard is used, remove it
-                    if let Some(pos) = new_word_bag.iter().position(|&x| x == '*') {
+            .into_par_iter()
+            .map(|i| {
+                let cur_valid_word = &valid_words[i];
+                // Prune word bag
+                let mut new_word_bag = letter_bag.clone();
+                for c in cur_valid_word.0.chars() {
+                    if let Some(pos) = new_word_bag.iter().position(|&x| x == c) {
                         new_word_bag.remove(pos);
+                    } else if let Some(_ind) = cur_valid_word.1 {
+                        // If wildcard is used, remove it
+                        if let Some(pos) = new_word_bag.iter().position(|&x| x == '*') {
+                            new_word_bag.remove(pos);
+                        } else {
+                            return vec![];
+                        }
                     } else {
                         return vec![];
                     }
-                } else {
-                    return vec![];
                 }
-            }
-            // Drop off other valid_words that are not valid for the current word_bag
-            let next_valid_words = valid_words//[i + 1..]
-                .iter()
-                .filter(|&&w| {
-                    w.0.chars().all(|c| {
-                        new_word_bag
-                            .iter()
-                            .any(|&x| x == c || (w.1 == Some(c) && x == '*'))
+                // Drop off other valid_words that are not valid for the current word_bag
+                let next_valid_words = valid_words //[i + 1..]
+                    .iter()
+                    .filter(|&&w| {
+                        w.0.chars().all(|c| {
+                            new_word_bag
+                                .iter()
+                                .any(|&x| x == c || (w.1 == Some(c) && x == '*'))
+                        })
                     })
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            generate_boards_from_bonus(bonus_word, next_valid_words, new_word_bag, row+1)
-                .into_iter()
-                .map(|mut set| {
-                    set.push(cur_valid_word);
-                    set
-                })
-                .collect::<Vec<Vec<_>>>()
-        })
-        .flatten()
-        .collect()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                generate_boards_from_bonus(bonus_word, next_valid_words, new_word_bag, row + 1)
+                    .into_iter()
+                    .map(|mut set| {
+                        set.push(cur_valid_word);
+                        set
+                    })
+                    .collect::<Vec<Vec<_>>>()
+            })
+            .flatten()
+            .collect()
     }
 }
 
@@ -438,22 +443,20 @@ fn main() {
 
     let bonus_words: Vec<&ValidWord> = valid_words
         .iter()
-        .filter_map(|w|
+        .filter_map(|w| {
             if w.0.len() == BONUS_WORD_INDS.len() {
                 Some(w)
             } else {
                 None
             }
-        )
+        })
         .collect();
     println!("Number of bonus words: {}", bonus_words.len());
 
     // TODO: adjust to check 3 and 4 words as well
     let valid_words: Vec<&ValidWord> = valid_words
         .iter()
-        .filter_map(|w| {
-            if w.0.len() == 5 { Some(w) } else { None }
-        })
+        .filter_map(|w| if w.0.len() == 5 { Some(w) } else { None })
         .collect();
     println!("Number of 5 words: {}", valid_words.len());
     // flush io
@@ -463,8 +466,13 @@ fn main() {
     const K: i32 = 5;
     // let valid_sets = generate_k_sets(valid_words_copy, K, letter_bag);
     // let valid_sets = generate_k_sets_memo(valid_words_copy.into(), K, 0);
-    let valid_sets: Vec<Vec<&ValidWord>> = bonus_words.par_iter().map(|bonus_word|
-        generate_boards_from_bonus(bonus_word, valid_words.clone(), letter_bag.clone(), 0)).flatten().collect();
+    let valid_sets: Vec<Vec<&ValidWord>> = bonus_words
+        .par_iter()
+        .map(|bonus_word| {
+            generate_boards_from_bonus(bonus_word, valid_words.clone(), letter_bag.clone(), 0)
+        })
+        .flatten()
+        .collect();
     println!("Total valid sets of 5 rows found: {}", valid_sets.len());
     // Print the first 5 sets
     for (i, set) in valid_sets.iter().take(5).enumerate() {
