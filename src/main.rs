@@ -9,81 +9,87 @@ use std::sync::{Arc, Mutex};
 struct Letter {
     ch: char,
     num: usize,
-    score: i32,
+//    score: i32,
 }
 
 const POSSIBLE_LETTERS: [Letter; 14] = [
     Letter {
         ch: 'G',
         num: 1,
-        score: 45,
     },
     Letter {
         ch: 'B',
         num: 3,
-        score: 50,
     },
     Letter {
         ch: 'M',
         num: 1,
-        score: 35,
     },
     Letter {
         ch: 'D',
         num: 1,
-        score: 30,
     },
     Letter {
         ch: 'N',
         num: 2,
-        score: 20,
     },
     Letter {
         ch: 'U',
         num: 1,
-        score: 15,
     },
     Letter {
         ch: 'L',
         num: 1,
-        score: 9,
     },
     Letter {
         ch: 'T',
         num: 2,
-        score: 10,
     },
     Letter {
         ch: 'O',
         num: 2,
-        score: 7,
     },
     Letter {
         ch: 'R',
         num: 2,
-        score: 7,
     },
     Letter {
         ch: 'S',
         num: 3,
-        score: 5,
     },
     Letter {
         ch: 'A',
         num: 4,
-        score: 5,
     },
     Letter {
         ch: 'E',
         num: 2,
-        score: 5,
     },
     Letter {
         ch: '*',
         num: 1,   // Wildcard
-        score: 0, // Wildcard has no score
     },
 ];
+
+fn letter_to_score(c: &char) -> i32 {
+    match c {
+        'B' => 50,
+        'G' => 45,
+        'M' => 35,
+        'D' => 30,
+        'N' => 20,
+        'U' => 15,
+        'T' => 10,
+        'L' => 9,
+        'O' => 7,
+        'R' => 7,
+        'S' => 7,
+        'A' => 5,
+        'E' => 5,
+        '*' => 0,
+        _ => 0
+    } 
+}
 
 const SCHEMA: [[i32; 5]; 5] = [
     [1, 1, 1, 1, 1],
@@ -176,7 +182,6 @@ type ValidWord = (String, Option<char>); // (word, wildcard_used)
 
 fn score_board(
     board: &Vec<Option<&ValidWord>>,
-    letter_scores: &HashMap<char, i32>,
     bonus_word_used: bool,
 ) -> u32 {
     let mut wildcard_letter = '*';
@@ -207,7 +212,7 @@ fn score_board(
         for (row, word) in board.iter().enumerate() {
             let mut word_score = 0.0;
             for (col, ch) in word.unwrap().0.chars().enumerate() {
-                word_score += (letter_scores.get(&ch).unwrap_or(&0) * SCHEMA[row][col]) as f64;
+                word_score += (letter_to_score(&ch) * SCHEMA[row][col]) as f64;
             }
             if true
             //is common word
@@ -225,7 +230,7 @@ fn score_board(
         if bonus_word_used {
             let mut word_score = 0.0;
             for (i, &(r, c)) in BONUS_WORD_INDS.iter().enumerate() {
-                word_score += (letter_scores.get(&new_word[i]).unwrap_or(&0) * SCHEMA[r][c]) as f64;
+                word_score += (letter_to_score(&new_word[i]) * SCHEMA[r][c]) as f64;
             }
             if true
             //is common word
@@ -247,7 +252,7 @@ fn score_board(
                         continue;
                         // score += letter_scores.get(&wildcard_letter).unwrap_or(&0) * SCHEMA[row][col];
                     }
-                    word_score += (letter_scores.get(&ch).unwrap_or(&0) * SCHEMA[row][col]) as f64;
+                    word_score += (letter_to_score(&ch) * SCHEMA[row][col]) as f64;
                 }
                 if true
                 //is common word
@@ -270,7 +275,7 @@ fn score_board(
                         continue;
                     }
                     word_score +=
-                        (letter_scores.get(&new_word[i]).unwrap_or(&0) * SCHEMA[r][c]) as f64;
+                        (letter_to_score(&new_word[i]) * SCHEMA[r][c]) as f64;
                 }
                 if true
                 //is common word
@@ -401,7 +406,7 @@ fn main() {
         for _ in 0..l.num {
             letter_bag.push(l.ch);
         }
-        letter_scores.insert(l.ch, l.score);
+        letter_scores.insert(l.ch, letter_to_score(&l.ch));
     }
 
     // Read words from file
@@ -468,7 +473,7 @@ fn main() {
                 let result = result
                     .iter()
                     .fold((vec![], 0), |(prev_board, prev_score), board| {
-                        let score = score_board(board, &letter_scores, true);
+                        let score = score_board(board, true);
                         if score > prev_score {
                             (board.to_vec(), score)
                         } else {
