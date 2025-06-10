@@ -305,7 +305,7 @@ fn generate_boards_from_bonus<'a>(
         let index = BONUS_WORD_INDS[row].1;
 
         (0..n)
-            .into_par_iter()
+            .into_iter()
             .map(|i| {
                 let cur_valid_word = &valid_words[i];
                 if cur_valid_word.0.chars().nth(index) != bonus_word.0.chars().nth(row) {
@@ -353,7 +353,7 @@ fn generate_boards_from_bonus<'a>(
             .collect()
     } else {
         (0..n)
-            .into_par_iter()
+            .into_iter()
             .map(|i| {
                 let cur_valid_word = &valid_words[i];
                 // Prune word bag
@@ -401,12 +401,10 @@ fn generate_boards_from_bonus<'a>(
 fn main() {
     // Hardcoded letter bag
     let mut letter_bag = Vec::new();
-    let mut letter_scores = HashMap::new();
     for l in &POSSIBLE_LETTERS {
         for _ in 0..l.num {
             letter_bag.push(l.ch);
         }
-        letter_scores.insert(l.ch, letter_to_score(&l.ch));
     }
 
     // Read words from file
