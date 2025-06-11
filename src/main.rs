@@ -9,65 +9,26 @@ use std::sync::{Arc, Mutex};
 struct Letter {
     ch: char,
     num: usize,
-//    score: i32,
+    //    score: i32,
 }
 
 const POSSIBLE_LETTERS: [Letter; 14] = [
-    Letter {
-        ch: 'G',
-        num: 1,
-    },
-    Letter {
-        ch: 'B',
-        num: 3,
-    },
-    Letter {
-        ch: 'M',
-        num: 1,
-    },
-    Letter {
-        ch: 'D',
-        num: 1,
-    },
-    Letter {
-        ch: 'N',
-        num: 2,
-    },
-    Letter {
-        ch: 'U',
-        num: 1,
-    },
-    Letter {
-        ch: 'L',
-        num: 1,
-    },
-    Letter {
-        ch: 'T',
-        num: 2,
-    },
-    Letter {
-        ch: 'O',
-        num: 2,
-    },
-    Letter {
-        ch: 'R',
-        num: 2,
-    },
-    Letter {
-        ch: 'S',
-        num: 3,
-    },
-    Letter {
-        ch: 'A',
-        num: 4,
-    },
-    Letter {
-        ch: 'E',
-        num: 2,
-    },
+    Letter { ch: 'G', num: 1 },
+    Letter { ch: 'B', num: 3 },
+    Letter { ch: 'M', num: 1 },
+    Letter { ch: 'D', num: 1 },
+    Letter { ch: 'N', num: 2 },
+    Letter { ch: 'U', num: 1 },
+    Letter { ch: 'L', num: 1 },
+    Letter { ch: 'T', num: 2 },
+    Letter { ch: 'O', num: 2 },
+    Letter { ch: 'R', num: 2 },
+    Letter { ch: 'S', num: 3 },
+    Letter { ch: 'A', num: 4 },
+    Letter { ch: 'E', num: 2 },
     Letter {
         ch: '*',
-        num: 1,   // Wildcard
+        num: 1, // Wildcard
     },
 ];
 
@@ -87,8 +48,8 @@ fn letter_to_score(c: &char) -> u32 {
         'A' => 5,
         'E' => 5,
         '*' => 0,
-        _ => 0
-    } 
+        _ => 0,
+    }
 }
 
 const SCHEMA: [[u32; 5]; 5] = [
@@ -180,10 +141,54 @@ const BONUS_WORD_INDS: [(usize, usize); 4] = [(0, 2), (1, 2), (2, 2), (3, 3)];
 
 type ValidWord = (String, Option<char>); // (word, wildcard_used)
 
-fn score_board(
-    board: &Vec<Option<&ValidWord>>,
-    bonus_word_used: bool,
-) -> u32 {
+fn prescore_word_in_row(row: usize, word: &ValidWord) -> u32 {
+    let mut best_score = 0;
+
+    if let Some(wildcard_char) = word.1 {
+        if SCHEMA[row].iter().any(|&x| x != 1) {
+            for col in word
+                .0
+                .char_indices()
+                .filter(|(_, c)| *c == wildcard_char)
+                .map(|(i, _)| i)
+            {
+                let new_score = score_word(4, word, Some((4, col)));
+                if new_score > best_score {
+                    best_score = new_score;
+                }
+            }
+        } else {
+            let col = word.0.find(wildcard_char).unwrap();
+            best_score = score_word(row, word, Some((row, col)))
+        }
+    } else {
+        best_score = score_word(row, word, None);
+    }
+    best_score
+}
+
+fn score_word(row: usize, word: &ValidWord, wildcard_index: Option<(usize, usize)>) -> u32 {
+    println!("scoring word {:?}", word);
+    let mut word_score = 0.0;
+
+    for (col, ch) in word.0.chars().enumerate() {
+        if wildcard_index == Some((row, col)) {
+            // If this is the wildcard position, use the wildcard letter
+            continue;
+            // score += letter_scores.get(&wildcard_letter).unwrap_or(&0) * SCHEMA[row][col];
+        }
+        word_score += (letter_to_score(&ch) * SCHEMA[row][col]) as f64;
+    }
+    if true
+    //is common word
+    {
+        f64::ceil(word_score * 1.3) as u32
+    } else {
+        f64::ceil(word_score) as u32
+    }
+}
+
+fn score_board(board: &Vec<Option<&ValidWord>>, bonus_word_used: bool) -> u32 {
     let mut wildcard_letter = '*';
     for word in board.iter() {
         if let Some(wildchar) = word.unwrap().1 {
@@ -210,15 +215,7 @@ fn score_board(
     if all_wildcard_indices.is_empty() {
         let mut local_score = 0;
         for (row, word) in board.iter().enumerate() {
-            let mut word_score = 0.0;
-            for (col, ch) in word.unwrap().0.chars().enumerate() {
-                word_score += (letter_to_score(&ch) * SCHEMA[row][col]) as f64;
-            }
-            if true
-            //is common word
-            {
-                local_score += f64::ceil(word_score * 1.3) as u32;
-            }
+            local_score += score_word(row, word.unwrap(), None);
         }
         // Now add the bonus words score
         let mut new_word = ['*'; 4];
@@ -245,20 +242,7 @@ fn score_board(
         for (row1, col1) in all_wildcard_indices {
             let mut local_score = 0;
             for (row, word) in board.iter().enumerate() {
-                let mut word_score = 0.0;
-                for (col, ch) in word.unwrap().0.chars().enumerate() {
-                    if row == row1 && col == col1 {
-                        // If this is the wildcard position, use the wildcard letter
-                        continue;
-                        // score += letter_scores.get(&wildcard_letter).unwrap_or(&0) * SCHEMA[row][col];
-                    }
-                    word_score += (letter_to_score(&ch) * SCHEMA[row][col]) as f64;
-                }
-                if true
-                //is common word
-                {
-                    local_score += f64::ceil(word_score * 1.3) as u32;
-                }
+                local_score += score_word(row, word.unwrap(), Some((row1, col1)));
             }
             // Now add the bonus words score
             let mut new_word = ['*'; 4];
@@ -274,8 +258,7 @@ fn score_board(
                         // If this is the wildcard position, use the wildcard letter
                         continue;
                     }
-                    word_score +=
-                        (letter_to_score(&new_word[i]) * SCHEMA[r][c]) as f64;
+                    word_score += (letter_to_score(&new_word[i]) * SCHEMA[r][c]) as f64;
                 }
                 if true
                 //is common word
@@ -446,17 +429,17 @@ fn main() {
     println!("Number of bonus words: {}", bonus_words.len());
 
     // TODO: adjust to check 3 and 4 words as well
-    let valid_words: Vec<&ValidWord> = valid_words
-        .iter()
-        .filter(|w| w.0.len() == 5)
-        .collect();
+    let mut valid_words: Vec<&ValidWord> = valid_words.iter().filter(|w| w.0.len() == 5).collect();
     println!("Number of 5 words: {}", valid_words.len());
     // flush io
     std::io::stdout().flush().unwrap();
 
+    valid_words.sort_by(|&x, &y| prescore_word_in_row(4, x).cmp(&prescore_word_in_row(4, y)));
+    println!("{:?}", valid_words);
+
     let progress = Arc::new(Mutex::new(0usize));
     let total_bonus = bonus_words.len();
-    let scored_sets = bonus_words
+    let scored_sets = vec![("BOMB".to_string(), None)] //bonus_words
         .par_iter()
         .map_init(
             || progress.clone(),
@@ -467,7 +450,7 @@ fn main() {
                     letter_bag.clone(),
                     0,
                 );
-                
+
                 let result = result
                     .iter()
                     .fold((vec![], 0), |(prev_board, prev_score), board| {
@@ -478,7 +461,7 @@ fn main() {
                             (prev_board, prev_score)
                         }
                     });
-                
+
                 // Progress bar update
                 {
                     let mut done = progress.lock().unwrap();
