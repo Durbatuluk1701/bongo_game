@@ -1,5 +1,4 @@
 use rayon::prelude::*;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::io::{BufRead, BufReader};
@@ -32,7 +31,16 @@ const POSSIBLE_LETTERS: [Letter; 14] = [
     },
 ];
 
-fn letter_to_score(c: &char) -> u32 {
+fn char_to_usize(c: char) -> usize {
+    // turns A to 0, B to 1, ... Z to 25, * to 26
+    assert!(c.is_ascii_uppercase() || c == '*');
+    if c == '*' {
+        return 26;
+    }
+    c as usize - 65
+}
+
+fn letter_to_score(c: char) -> u32 {
     match c {
         'B' => 50,
         'G' => 45,
@@ -141,6 +149,22 @@ const BONUS_WORD_INDS: [(usize, usize); 4] = [(0, 2), (1, 2), (2, 2), (3, 3)];
 
 type ValidWord = (String, Option<char>); // (word, wildcard_used)
 
+fn remove_word_from_bag(word_info: &ValidWord, letter_bag: &[usize; 27]) -> Option<[usize; 27]> {
+    let word = &word_info.0;
+    let uses_wildcard = word_info.1.is_some();
+    let mut new_letter_bag = letter_bag.clone();
+    for c in word.chars() {
+        if new_letter_bag[char_to_usize(c)] > 0 {
+            new_letter_bag[char_to_usize(c)] -= 1;
+        } else if uses_wildcard && new_letter_bag[char_to_usize('*')] > 0 {
+            new_letter_bag[char_to_usize('*')] -= 1;
+        } else {
+            return None;
+        }
+    }
+    Some(new_letter_bag)
+}
+
 fn prescore_word_in_row(row: usize, word: &ValidWord) -> u32 {
     let mut best_score = 0;
 
@@ -168,7 +192,7 @@ fn prescore_word_in_row(row: usize, word: &ValidWord) -> u32 {
 }
 
 fn score_word(row: usize, word: &ValidWord, wildcard_index: Option<(usize, usize)>) -> u32 {
-    println!("scoring word {:?}", word);
+    //println!("scoring word {:?}", word);
     let mut word_score = 0.0;
 
     for (col, ch) in word.0.chars().enumerate() {
@@ -177,7 +201,7 @@ fn score_word(row: usize, word: &ValidWord, wildcard_index: Option<(usize, usize
             continue;
             // score += letter_scores.get(&wildcard_letter).unwrap_or(&0) * SCHEMA[row][col];
         }
-        word_score += (letter_to_score(&ch) * SCHEMA[row][col]) as f64;
+        word_score += (letter_to_score(ch) * SCHEMA[row][col]) as f64;
     }
     if true
     //is common word
@@ -227,7 +251,7 @@ fn score_board(board: &Vec<Option<&ValidWord>>, bonus_word_used: bool) -> u32 {
         if bonus_word_used {
             let mut word_score = 0.0;
             for (i, &(r, c)) in BONUS_WORD_INDS.iter().enumerate() {
-                word_score += (letter_to_score(&new_word[i]) * SCHEMA[r][c]) as f64;
+                word_score += (letter_to_score(new_word[i]) * SCHEMA[r][c]) as f64;
             }
             if true
             //is common word
@@ -258,7 +282,7 @@ fn score_board(board: &Vec<Option<&ValidWord>>, bonus_word_used: bool) -> u32 {
                         // If this is the wildcard position, use the wildcard letter
                         continue;
                     }
-                    word_score += (letter_to_score(&new_word[i]) * SCHEMA[r][c]) as f64;
+                    word_score += (letter_to_score(new_word[i]) * SCHEMA[r][c]) as f64;
                 }
                 if true
                 //is common word
@@ -276,58 +300,49 @@ fn score_board(board: &Vec<Option<&ValidWord>>, bonus_word_used: bool) -> u32 {
 
 fn generate_boards_from_bonus<'a>(
     bonus_word: &ValidWord,
-    valid_words: Vec<&'a ValidWord>,
-    letter_bag: Vec<char>,
+    valid_words: &Vec<&'a ValidWord>,
+    letter_bag: &[usize; 27],
     row: usize,
 ) -> Vec<Vec<Option<&'a ValidWord>>> {
     if row > 4 {
         return vec![vec![None; 5]];
     }
-    let n = valid_words.len();
+    // Drop off other valid_words that are not valid for the current word_bag
+    let mut valid_words = valid_words
+        .iter()
+        .filter_map(|&w| remove_word_from_bag(&w, letter_bag).map(|b| (w, b)));
+
+    let valid_words_vec = valid_words.clone().into_iter().map(|(w, _)| w).collect();
+
+    if valid_words.clone().peekable().peek().is_none() {
+        return vec![];
+    }
+    if row == 4 {
+        return vec![vec![
+            None,
+            None,
+            None,
+            None,
+            Some(&valid_words.next().unwrap().0),
+        ]];
+    }
+
     if BONUS_WORD_INDS.map(|(i, _)| i).contains(&row) {
         let index = BONUS_WORD_INDS[row].1;
 
-        (0..n)
-            .into_iter()
+        valid_words
             .map(|i| {
-                let cur_valid_word = &valid_words[i];
+                let cur_valid_word = i.0;
+                let new_letter_bag = i.1;
                 if cur_valid_word.0.chars().nth(index) != bonus_word.0.chars().nth(row) {
                     return vec![];
                 }
 
-                // Prune word bag
-                let mut new_letter_bag = letter_bag.clone();
-                for c in cur_valid_word.0.chars() {
-                    if let Some(pos) = new_letter_bag.iter().position(|&x| x == c) {
-                        new_letter_bag.remove(pos);
-                    } else if let Some(_ind) = cur_valid_word.1 {
-                        // If wildcard is used, remove it
-                        if let Some(pos) = new_letter_bag.iter().position(|&x| x == '*') {
-                            new_letter_bag.remove(pos);
-                        } else {
-                            return vec![];
-                        }
-                    } else {
-                        return vec![];
-                    }
-                }
-                // Drop off other valid_words that are not valid for the current word_bag
-                let next_valid_words = valid_words
-                    .iter()
-                    .filter(|&&w| {
-                        w.0.chars().all(|c| {
-                            new_letter_bag
-                                .iter()
-                                .any(|&x| x == c || (w.1 == Some(c) && x == '*'))
-                        })
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                generate_boards_from_bonus(bonus_word, next_valid_words, new_letter_bag, row + 1)
+                generate_boards_from_bonus(bonus_word, &valid_words_vec, &new_letter_bag, row + 1)
                     .into_iter()
                     .map(|mut set| {
                         //set.push(cur_valid_word);
-                        set[row] = Some(cur_valid_word);
+                        set[row] = Some(&cur_valid_word);
                         set
                     })
                     .collect::<Vec<_>>()
@@ -335,43 +350,15 @@ fn generate_boards_from_bonus<'a>(
             .flatten()
             .collect()
     } else {
-        (0..n)
-            .into_iter()
+        valid_words
             .map(|i| {
-                let cur_valid_word = &valid_words[i];
-                // Prune word bag
-                let mut new_word_bag = letter_bag.clone();
-                for c in cur_valid_word.0.chars() {
-                    if let Some(pos) = new_word_bag.iter().position(|&x| x == c) {
-                        new_word_bag.remove(pos);
-                    } else if let Some(_ind) = cur_valid_word.1 {
-                        // If wildcard is used, remove it
-                        if let Some(pos) = new_word_bag.iter().position(|&x| x == '*') {
-                            new_word_bag.remove(pos);
-                        } else {
-                            return vec![];
-                        }
-                    } else {
-                        return vec![];
-                    }
-                }
-                // Drop off other valid_words that are not valid for the current word_bag
-                let next_valid_words = valid_words
-                    .iter()
-                    .filter(|&&w| {
-                        w.0.chars().all(|c| {
-                            new_word_bag
-                                .iter()
-                                .any(|&x| x == c || (w.1 == Some(c) && x == '*'))
-                        })
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                generate_boards_from_bonus(bonus_word, next_valid_words, new_word_bag, row + 1)
+                let cur_valid_word = i.0;
+                let new_letter_bag = i.1;
+                generate_boards_from_bonus(bonus_word, &valid_words_vec, &new_letter_bag, row + 1)
                     .into_iter()
                     .map(|mut set| {
                         //set.push(cur_valid_word);
-                        set[row] = Some(cur_valid_word);
+                        set[row] = Some(&cur_valid_word);
                         set
                     })
                     .collect::<Vec<_>>()
@@ -383,11 +370,9 @@ fn generate_boards_from_bonus<'a>(
 
 fn main() {
     // Hardcoded letter bag
-    let mut letter_bag = Vec::new();
+    let mut letter_bag = [0; 27];
     for l in &POSSIBLE_LETTERS {
-        for _ in 0..l.num {
-            letter_bag.push(l.ch);
-        }
+        letter_bag[char_to_usize(l.ch)] = l.num;
     }
 
     // Read words from file
@@ -404,15 +389,11 @@ fn main() {
             let mut bag = letter_bag.clone();
             let mut wildcard_char: Option<char> = None;
             for c in word.chars() {
-                if let Some(pos) = bag.iter().position(|&x| x == c) {
-                    bag.remove(pos);
-                } else if wildcard_char.is_none() {
-                    if let Some(pos) = bag.iter().position(|&x| x == '*') {
-                        bag.remove(pos);
-                        wildcard_char = Some(c);
-                    } else {
-                        return None;
-                    }
+                if bag[char_to_usize(c)] > 0 {
+                    bag[char_to_usize(c)] -= 1;
+                } else if wildcard_char.is_none() && bag[char_to_usize('*')] > 0 {
+                    wildcard_char = Some(c);
+                    bag[char_to_usize('*')] -= 1;
                 } else {
                     return None;
                 }
@@ -434,22 +415,19 @@ fn main() {
     // flush io
     std::io::stdout().flush().unwrap();
 
-    valid_words.sort_by(|&x, &y| prescore_word_in_row(4, x).cmp(&prescore_word_in_row(4, y)));
+    valid_words.sort_by(|&x, &y| prescore_word_in_row(4, y).cmp(&prescore_word_in_row(4, x)));
     println!("{:?}", valid_words);
 
     let progress = Arc::new(Mutex::new(0usize));
     let total_bonus = bonus_words.len();
-    let scored_sets = vec![("BOMB".to_string(), None)] //bonus_words
+    let scored_sets = vec![("BOMB".to_string(), None)]
+        //bonus_words
         .par_iter()
         .map_init(
             || progress.clone(),
             |progress, bonus_word| {
-                let result = generate_boards_from_bonus(
-                    bonus_word,
-                    valid_words.clone(),
-                    letter_bag.clone(),
-                    0,
-                );
+                let result =
+                    generate_boards_from_bonus(bonus_word, &valid_words.clone(), &letter_bag, 0);
 
                 let result = result
                     .iter()
