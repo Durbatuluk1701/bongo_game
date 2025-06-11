@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone, Debug)]
 struct Letter {
     ch: char,
-    num: usize,
+    num: u8,
     //    score: i32,
 }
 
@@ -147,9 +147,10 @@ const BONUS_WORD_INDS: [(usize, usize); 4] = [(0, 2), (1, 2), (2, 2), (3, 3)];
 
 // const BONUS_WORD_INDS: [(usize, usize); 4] = [(0, 1), (1, 2), (2, 3), (3, 3)];
 
-type ValidWord = (String, Option<char>); // (word, wildcard_used)
+type ValidWord<'a> = (&'a str, Option<char>); // (word, wildcard_used)
+type LetterBag = [u8; 27];
 
-fn remove_word_from_bag(word_info: &ValidWord, letter_bag: &[usize; 27]) -> Option<[usize; 27]> {
+fn remove_word_from_bag(word_info: &ValidWord, letter_bag: &LetterBag) -> Option<LetterBag> {
     let word = &word_info.0;
     let uses_wildcard = word_info.1.is_some();
     let mut new_letter_bag = letter_bag.clone();
@@ -192,14 +193,11 @@ fn prescore_word_in_row(row: usize, word: &ValidWord) -> u32 {
 }
 
 fn score_word(row: usize, word: &ValidWord, wildcard_index: Option<(usize, usize)>) -> u32 {
-    //println!("scoring word {:?}", word);
     let mut word_score = 0.0;
 
     for (col, ch) in word.0.chars().enumerate() {
         if wildcard_index == Some((row, col)) {
-            // If this is the wildcard position, use the wildcard letter
             continue;
-            // score += letter_scores.get(&wildcard_letter).unwrap_or(&0) * SCHEMA[row][col];
         }
         word_score += (letter_to_score(ch) * SCHEMA[row][col]) as f64;
     }
@@ -279,7 +277,6 @@ fn score_board(board: &Vec<Option<&ValidWord>>, bonus_word_used: bool) -> u32 {
                 let mut word_score = 0.0;
                 for (i, &(r, c)) in BONUS_WORD_INDS.iter().enumerate() {
                     if r == row1 && c == col1 {
-                        // If this is the wildcard position, use the wildcard letter
                         continue;
                     }
                     word_score += (letter_to_score(new_word[i]) * SCHEMA[r][c]) as f64;
@@ -301,30 +298,28 @@ fn score_board(board: &Vec<Option<&ValidWord>>, bonus_word_used: bool) -> u32 {
 fn generate_boards_from_bonus<'a>(
     bonus_word: &ValidWord,
     valid_words: &Vec<&'a ValidWord>,
-    letter_bag: &[usize; 27],
+    letter_bag: &LetterBag,
     row: usize,
-) -> Vec<Vec<Option<&'a ValidWord>>> {
+) -> Vec<Vec<Option<&'a ValidWord<'a>>>> {
     if row > 4 {
         return vec![vec![None; 5]];
     }
     // Drop off other valid_words that are not valid for the current word_bag
-    let mut valid_words = valid_words
+    let valid_words = valid_words
         .iter()
         .filter_map(|&w| remove_word_from_bag(&w, letter_bag).map(|b| (w, b)));
 
-    let valid_words_vec = valid_words.clone().into_iter().map(|(w, _)| w).collect();
+    let valid_words_vec = valid_words
+        .clone()
+        .into_iter()
+        .map(|(w, _)| w)
+        .collect::<Vec<_>>();
 
-    if valid_words.clone().peekable().peek().is_none() {
+    if valid_words_vec.is_empty() {
         return vec![];
     }
     if row == 4 {
-        return vec![vec![
-            None,
-            None,
-            None,
-            None,
-            Some(&valid_words.next().unwrap().0),
-        ]];
+        return vec![vec![None, None, None, None, Some(&valid_words_vec[0])]];
     }
 
     if BONUS_WORD_INDS.map(|(i, _)| i).contains(&row) {
@@ -341,7 +336,6 @@ fn generate_boards_from_bonus<'a>(
                 generate_boards_from_bonus(bonus_word, &valid_words_vec, &new_letter_bag, row + 1)
                     .into_iter()
                     .map(|mut set| {
-                        //set.push(cur_valid_word);
                         set[row] = Some(&cur_valid_word);
                         set
                     })
@@ -357,7 +351,6 @@ fn generate_boards_from_bonus<'a>(
                 generate_boards_from_bonus(bonus_word, &valid_words_vec, &new_letter_bag, row + 1)
                     .into_iter()
                     .map(|mut set| {
-                        //set.push(cur_valid_word);
                         set[row] = Some(&cur_valid_word);
                         set
                     })
@@ -370,21 +363,22 @@ fn generate_boards_from_bonus<'a>(
 
 fn main() {
     // Hardcoded letter bag
-    let mut letter_bag = [0; 27];
+    let mut letter_bag: LetterBag = [0; 27];
     for l in &POSSIBLE_LETTERS {
-        letter_bag[char_to_usize(l.ch)] = l.num;
+        letter_bag[char_to_usize(l.ch)] = l.num as _;
     }
 
     // Read words from file
     let file = File::open("bongo-common-words.txt").expect("data.txt not found");
     let reader = BufReader::new(file);
-    let lines = reader.lines().collect::<Vec<_>>();
-    let lines = lines.into_iter().filter_map(|l| l.ok()).collect::<Vec<_>>();
+    let lines = reader
+        .lines()
+        .filter_map(|l| l.map(|s| s.to_ascii_uppercase()).ok())
+        .collect::<Vec<_>>();
     println!("Number of lines in file: {}", lines.len());
     // Generate all possible valid rows
-    let words_arc = Arc::new(lines);
-    let valid_words: Vec<ValidWord> = words_arc
-        .par_iter()
+    let valid_words: Vec<ValidWord> = lines
+        .iter()
         .filter_map(|word| {
             let mut bag = letter_bag.clone();
             let mut wildcard_char: Option<char> = None;
@@ -399,7 +393,7 @@ fn main() {
                 }
             }
             // If we reach here, the word is valid
-            Some((word.to_ascii_uppercase(), wildcard_char))
+            Some((&word[..], wildcard_char))
         })
         .collect();
 
@@ -420,8 +414,8 @@ fn main() {
 
     let progress = Arc::new(Mutex::new(0usize));
     let total_bonus = bonus_words.len();
-    let scored_sets = vec![("BOMB".to_string(), None)]
-        //bonus_words
+    let scored_sets = //vec![("BOMB", None)]
+        bonus_words
         .par_iter()
         .map_init(
             || progress.clone(),
@@ -429,16 +423,17 @@ fn main() {
                 let result =
                     generate_boards_from_bonus(bonus_word, &valid_words.clone(), &letter_bag, 0);
 
-                let result = result
-                    .iter()
-                    .fold((vec![], 0), |(prev_board, prev_score), board| {
-                        let score = score_board(board, true);
-                        if score > prev_score {
-                            (board.to_vec(), score)
-                        } else {
-                            (prev_board, prev_score)
-                        }
-                    });
+                let result =
+                    result
+                        .into_iter()
+                        .fold((vec![], 0), |(prev_board, prev_score), board| {
+                            let score = score_board(&board, true);
+                            if score > prev_score {
+                                (board, score)
+                            } else {
+                                (prev_board, prev_score)
+                            }
+                        });
 
                 // Progress bar update
                 {
@@ -464,7 +459,7 @@ fn main() {
             set.1,
             set.0
                 .iter()
-                .map(|w| w.unwrap().0.clone())
+                .map(|w| w.unwrap().0)
                 .collect::<Vec<_>>(),
         );
     }
